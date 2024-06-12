@@ -5,7 +5,7 @@ const cron = require('node-cron');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3119;
 
 const GITHUB_TOKEN = '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';
 const OWNER = 'hackclub';
