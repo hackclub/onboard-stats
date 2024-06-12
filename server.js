@@ -7,7 +7,7 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3119;
 
-const GITHUB_TOKEN = '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';
+const GITHUB_TOKEN = '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';
 const OWNER = 'hackclub';
 const REPO = 'onboard';
 const PROJECTS_DIR = 'projects';
