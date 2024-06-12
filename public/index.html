@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OnBoard Repository Statistics</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment@2.29.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.0"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        .chart-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .chart-container canvas {
+            width: 600px !important;
+            height: 400px !important;
+            margin: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>OnBoard Repository Statistics</h1>
+    <div class="chart-container">
+        <canvas id="projectsChart"></canvas>
+        <canvas id="pullRequestsChart"></canvas>
+    </div>
+    <script>
+        async function fetchData() {
+            try {
+                const response = await fetch('/data');
+                if (!response.ok) {
+                    throw new Error('Network response was not ok ' + response.statusText);
+                }
+                const data = await response.json();
+                console.log('Fetched data:', data); // Debug log for fetched data
+                return data;
+            } catch (error) {
+                console.error('Fetch data failed:', error);
+                return null;
+            }
+        }
+
+        function renderChart(ctx, labels, data, title) {
+            console.log('Rendering chart:', title); // Debug log for chart rendering
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1,
+                        fill: false,
+                        pointBackgroundColor: 'rgba(75, 192, 192, 1)',
+                        pointBorderColor: 'rgba(75, 192, 192, 1)',
+                        pointRadius: 5,
+                        pointHoverRadius: 7
+                    }]
+                },
+                options: {
+                    plugins: {
+
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.raw;
+                                }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: title,
+        		    font: {
+          			size: 20
+        		    }
+                        },
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'day'
+                            },
+                            adapters: {
+                                date: {
+                                    locale: moment.locale()
+                                }
+                            },
+                            ticks: {
+                                autoSkip: false,
+                                maxRotation: 0,
+                                minRotation: 0,
+                                callback: function(value, index, values) {
+                                    const date = moment(value);
+                                    const lastDate = moment(values[index - 1]);
+                                    if (index === values.length - 1 || date.diff(lastDate, 'days') > 1) {
+                                        return date.format('MMM D');
+                                    }
+                                    return null;
+                                }
+                            }
+                        },
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        async function main() {
+            const data = await fetchData();
+            if (!data) {
+                console.log('No data fetched');
+                return;
+            }
+
+            const projectsData = Object.values(data.projects).sort((a, b) => new Date(a.date) - new Date(b.date));
+            const pullRequestsData = Object.entries(data.pull_requests).sort((a, b) => new Date(a[0]) - new Date(b[0]));
+
+            console.log('Processed projectsData:', projectsData); // Debug log for processed projects data
+            console.log('Processed pullRequestsData:', pullRequestsData); // Debug log for processed PR data
+
+            // Filter out zero count data points
+            const filteredProjectsData = projectsData.filter(entry => entry.subdirsCount > 0);
+            const filteredPullRequestsData = pullRequestsData.filter(entry => entry[1] > 0);
+
+            const projectDates = filteredProjectsData.map(entry => new Date(entry.date));
+            const projectCounts = filteredProjectsData.map(entry => entry.subdirsCount);
+            const prDates = filteredPullRequestsData.map(entry => new Date(entry[0]));
+            const prCounts = filteredPullRequestsData.map(entry => entry[1]);
+
+            console.log('Filtered projectDates:', projectDates); // Debug log for project dates
+            console.log('Filtered projectCounts:', projectCounts); // Debug log for project counts
+            console.log('Filtered prDates:', prDates); // Debug log for PR dates
+            console.log('Filtered prCounts:', prCounts); // Debug log for PR counts
+
+            // Calculate the totals from the latest data points
+            const totalGrants = projectCounts[projectCounts.length - 1];
+            const totalOpenPRs = prCounts[prCounts.length - 1];
+
+            console.log('Total grants:', totalGrants); // Debug log for total grants
+            console.log('Total open PRs:', totalOpenPRs); // Debug log for total open PRs
+
+            const projectsCtx = document.getElementById('projectsChart').getContext('2d');
+            renderChart(projectsCtx, projectDates, projectCounts, `Number of Funded Projects Over Time (Total number of grants given = ${totalGrants})`);
+
+            const prCtx = document.getElementById('pullRequestsChart').getContext('2d');
+            renderChart(prCtx, prDates, prCounts, `Number of Open Pull Requests Over Time (Total number of open PRs = ${totalOpenPRs})`);
+        }
+
+        main();
+    </script>
+</body>
+</html>
