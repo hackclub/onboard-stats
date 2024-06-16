@@ -41,7 +41,7 @@ async function takeScreenshot(url) {
   await browser.close();
   return timestamp;
 }
-async sendHook => (async () => {
+const sendHook = async () => {
   const timestamp = await takeScreenshot(sourceURl)
   await webhook.send({
     text: 'Here\'s the daily OnBoard Stats :onboard:',
@@ -50,7 +50,7 @@ async sendHook => (async () => {
       image_url: `${sourceURl}/graphs/graphs_${timestamp}.png`
     }]
   });
-})();
+};
 
 cron.schedule('0 18 * * *', async () => {
   try {
