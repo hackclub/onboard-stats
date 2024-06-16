@@ -26,7 +26,7 @@ async function takeScreenshot(url) {
     [].forEach.call(document.getElementsByTagName('canvas'), canvasToImage)
   })
   await page.screenshot({
-    path: path.resolve(__dirname, './temp/graphs.png'),
+    path: path.resolve(__dirname, './public/graphs.png'),
     type: 'png',
     clip: { x: 0, y: 0, width: 800, height: 800 }
   });
