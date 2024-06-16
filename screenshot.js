@@ -1,11 +1,15 @@
-require('dotenv').config();
+const { IncomingWebhook } = require('@slack/webhook');
 const puppeteer = require('puppeteer');
 const path = require('path');
-const { IncomingWebhook } = require('@slack/webhook');
 const { format } = require('date-fns');
-const url = process.env.SLACK_WEBHOOK_URL;
-const webhook = new IncomingWebhook(url);
+const cron = require('node-cron');
+require('dotenv').config();
+
+const slackWebhookUrl = process.env.SLACK_WEBHOOK_URL;
 const sourceURl = process.env.DOMAIN;
+
+const webhook = new IncomingWebhook(slackWebhookUrl);
+
 async function takeScreenshot(url) {
   const browser = await puppeteer.launch();
   const page = await browser.newPage();
@@ -37,14 +41,31 @@ async function takeScreenshot(url) {
   await browser.close();
   return timestamp;
 }
-(async () => {
+async sendHook => (async () => {
   const timestamp = await takeScreenshot(sourceURl)
   await webhook.send({
     text: 'Here\'s the daily OnBoard Stats :onboard:',
     attachments: [{
-      title: 'OnBoard Stats sent at ${timestamp}',
+      title: `OnBoard Stats sent at ${timestamp}`,
       image_url: `${sourceURl}/graphs/graphs_${timestamp}.png`
     }]
   });
 })();
 
+cron.schedule('0 18 * * *', async () => {
+  try {
+    sendHook();
+  } catch (error) {
+      console.error('Error capturing screenshot or sending to Slack:', error);
+  }
+});
+
+cron.schedule('0 6 * * *', async () => {
+  try {
+    sendHook();
+  } catch (error) {
+      console.error('Error capturing screenshot or sending to Slack:', error);
+  }
+});
+
+sendHook();
