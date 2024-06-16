@@ -7,30 +7,55 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/moment@2.29.1"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.0"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-        }
-        .chart-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .chart-container canvas {
-            width: 600px !important;
-            height: 400px !important;
-            margin: 20px;
-        }
-    </style>
-</head>
-<body>
-    <h1>OnBoard Repository Statistics</h1>
-    <div class="chart-container">
-        <canvas id="projectsChart"></canvas>
-        <canvas id="pullRequestsChart"></canvas>
-    </div>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                text-align: center;
+                margin: 0;
+                padding: 0;
+                background-color: #f4f4f4;
+            }
+            .chart-container {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                padding: 20px;
+            }
+            .chart-item {
+                flex: 1 1 100%;
+                max-width: 100%;
+                padding: 10px;
+                box-sizing: border-box;
+            }
+            @media (min-width: 768px) {
+                .chart-item {
+                    flex: 1 1 45%;
+                }
+            }
+            @media (min-width: 1024px) {
+                .chart-item {
+                    flex: 1 1 30%;
+                }
+            }
+            canvas {
+                width: 100% !important;
+                height: 400px !important;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            }
+        </style>
+    </head>
+    <body>
+        <h1>OnBoard Repository Statistics</h1>
+        <div class="chart-container">
+            <div class="chart-item">
+                <canvas id="projectsChart"></canvas>
+            </div>
+            <div class="chart-item">
+                <canvas id="pullRequestsChart"></canvas>
+            </div>
+        </div>
     <script>
         async function fetchData() {
             try {
@@ -39,7 +64,7 @@
                     throw new Error('Network response was not ok ' + response.statusText);
                 }
                 const data = await response.json();
-                console.log('Fetched data:', data); // Debug log for fetched data
+                console.log('Fetched data:', data);
                 return data;
             } catch (error) {
                 console.error('Fetch data failed:', error);
@@ -47,26 +72,28 @@
             }
         }
 
-        function renderChart(ctx, labels, data, title) {
-            console.log('Rendering chart:', title); // Debug log for chart rendering
+        function renderChart(ctx, labels, data, type, title, unit, colors) {
+            console.log('Rendering chart:', title);
             new Chart(ctx, {
-                type: 'line',
+                type: type,
                 data: {
                     labels: labels,
                     datasets: [{
                         data: data,
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 1,
-                        fill: false,
-                        pointBackgroundColor: 'rgba(75, 192, 192, 1)',
-                        pointBorderColor: 'rgba(75, 192, 192, 1)',
-                        pointRadius: 5,
-                        pointHoverRadius: 7
+                        backgroundColor: colors.background,
+                        borderColor: colors.border,
+                        borderWidth: 2,
+                        pointBackgroundColor: colors.pointBackground,
+                        pointBorderColor: colors.pointBorder,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
+                        fill: true
                     }]
                 },
                 options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
-
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
@@ -77,9 +104,9 @@
                         title: {
                             display: true,
                             text: title,
-        		    font: {
-          			size: 20
-        		    }
+                            font: {
+                                size: 16
+                            }
                         },
                         legend: {
                             display: false
@@ -89,7 +116,11 @@
                         x: {
                             type: 'time',
                             time: {
-                                unit: 'day'
+                                unit: unit,
+                                tooltipFormat: 'll',
+                                displayFormats: {
+                                    month: 'MMM YYYY'
+                                }
                             },
                             adapters: {
                                 date: {
@@ -97,21 +128,17 @@
                                 }
                             },
                             ticks: {
-                                autoSkip: false,
                                 maxRotation: 0,
                                 minRotation: 0,
-                                callback: function(value, index, values) {
-                                    const date = moment(value);
-                                    const lastDate = moment(values[index - 1]);
-                                    if (index === values.length - 1 || date.diff(lastDate, 'days') > 1) {
-                                        return date.format('MMM D');
-                                    }
-                                    return null;
-                                }
+                                autoSkip: true,
+                                maxTicksLimit: 10
                             }
                         },
                         y: {
-                            beginAtZero: true
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0
+                            }
                         }
                     }
                 }
@@ -128,10 +155,9 @@
             const projectsData = Object.values(data.projects).sort((a, b) => new Date(a.date) - new Date(b.date));
             const pullRequestsData = Object.entries(data.pull_requests).sort((a, b) => new Date(a[0]) - new Date(b[0]));
 
-            console.log('Processed projectsData:', projectsData); // Debug log for processed projects data
-            console.log('Processed pullRequestsData:', pullRequestsData); // Debug log for processed PR data
+            console.log('Processed projectsData:', projectsData);
+            console.log('Processed pullRequestsData:', pullRequestsData);
 
-            // Filter out zero count data points
             const filteredProjectsData = projectsData.filter(entry => entry.subdirsCount > 0);
             const filteredPullRequestsData = pullRequestsData.filter(entry => entry[1] > 0);
 
@@ -140,23 +166,33 @@
             const prDates = filteredPullRequestsData.map(entry => new Date(entry[0]));
             const prCounts = filteredPullRequestsData.map(entry => entry[1]);
 
-            console.log('Filtered projectDates:', projectDates); // Debug log for project dates
-            console.log('Filtered projectCounts:', projectCounts); // Debug log for project counts
-            console.log('Filtered prDates:', prDates); // Debug log for PR dates
-            console.log('Filtered prCounts:', prCounts); // Debug log for PR counts
+            console.log('Filtered projectDates:', projectDates);
+            console.log('Filtered projectCounts:', projectCounts);
+            console.log('Filtered prDates:', prDates);
+            console.log('Filtered prCounts:', prCounts);
 
-            // Calculate the totals from the latest data points
             const totalGrants = projectCounts[projectCounts.length - 1];
             const totalOpenPRs = prCounts[prCounts.length - 1];
 
-            console.log('Total grants:', totalGrants); // Debug log for total grants
-            console.log('Total open PRs:', totalOpenPRs); // Debug log for total open PRs
+            console.log('Total grants:', totalGrants);
+            console.log('Total open PRs:', totalOpenPRs);
 
             const projectsCtx = document.getElementById('projectsChart').getContext('2d');
-            renderChart(projectsCtx, projectDates, projectCounts, `Number of Funded Projects Over Time (Total number of grants given = ${totalGrants})`);
+            renderChart(projectsCtx, projectDates, projectCounts, 'line', `Number of Funded Projects Over Time (Total number of grants given = ${totalGrants})`, 'month', {
+                background: 'rgba(75, 192, 192, 0.2)',
+                border: 'rgba(75, 192, 192, 1)',
+                pointBackground: 'rgba(75, 192, 192, 1)',
+                pointBorder: 'rgba(75, 192, 192, 1)'
+            });
 
             const prCtx = document.getElementById('pullRequestsChart').getContext('2d');
-            renderChart(prCtx, prDates, prCounts, `Number of Open Pull Requests Over Time (Total number of open PRs = ${totalOpenPRs})`);
+            renderChart(prCtx, prDates, prCounts, 'bar', `Number of Open Pull Requests Over Time (Total number of open PRs = ${totalOpenPRs})`, 'day', {
+                background: 'rgba(153, 102, 255, 0.2)',
+                border: 'rgba(153, 102, 255, 1)',
+                pointBackground: 'rgba(153, 102, 255, 1)',
+                pointBorder: 'rgba(153, 102, 255, 1)'
+            });
+
         }
 
         main();
