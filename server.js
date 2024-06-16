@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
@@ -5,14 +6,13 @@ const cron = require('node-cron');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3119;
+const PORT = process.env.PORT || 3030;
 
-const GITHUB_TOKEN = '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';
-const OWNER = 'hackclub';
-const REPO = 'onboard';
-const PROJECTS_DIR = 'projects';
-const HISTORY_FILE = 'commit_history.json';
-
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const OWNER = process.env.OWNER;
+const REPO = process.env.REPO;
+const PROJECTS_DIR = process.env.PROJECTS_DIR;
+const HISTORY_FILE = process.env.HISTORY_FILE;
 app.use(express.static('public'));
 
 const getHeaders = () => ({
@@ -20,6 +20,19 @@ const getHeaders = () => ({
         Authorization: `token ${GITHUB_TOKEN}`
     }
 });
+
+const verifyToken = async () => {
+    try {
+        await axios.get('https://api.github.com/user', {
+            headers: {
+                Authorization: `token ${GITHUB_TOKEN}`
+            }
+        });
+        return true;
+    } catch {
+        return false;
+    }
+};
 
 const getCommits = async () => {
     let url = `https://api.github.com/repos/${OWNER}/${REPO}/commits`;
@@ -66,7 +79,17 @@ const getOpenPullRequestsCount = async () => {
 
 const updateHistory = async () => {
     console.log("begin updateHistory");
-    let historyData = fs.existsSync(HISTORY_FILE) ? JSON.parse(fs.readFileSync(HISTORY_FILE)) : { projects: {}, pull_requests: {} };
+    let historyData = { projects: {}, pull_requests: {} };
+    if (fs.existsSync(HISTORY_FILE)) {
+        try {
+            historyData = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
+            if(!historyData.projects){
+                historyData = { projects: {}, pull_requests: {} };
+            }
+        } catch (error) {
+            console.error(`Error parsing ${HISTORY_FILE}:`, error);
+        }
+    }
     const commits = await getCommits();
 
     for (const commit of commits) {
@@ -103,8 +126,14 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Server is running on port ${PORT}`);
-    updateHistory(); // Initial call to update history
+    const isTokenValid = await verifyToken();
+    if (isTokenValid) {
+        await updateHistory();
+    } else {
+        console.error("Server started, but GitHub token is invalid. updateHistory will not run.");
+        process.exit();
+    }
     console.log("end listen");
 });
