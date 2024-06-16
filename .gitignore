@@ -1,4 +1,4 @@
 .env
 node_modules
 commit_history.json
-public/graphs.png
+public/graphs/

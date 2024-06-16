@@ -2,6 +2,7 @@ require('dotenv').config();
 const puppeteer = require('puppeteer');
 const path = require('path');
 const { IncomingWebhook } = require('@slack/webhook');
+const { format } = require('date-fns');
 const url = process.env.SLACK_WEBHOOK_URL;
 const webhook = new IncomingWebhook(url);
 const sourceURl = process.env.DOMAIN;
@@ -24,21 +25,25 @@ async function takeScreenshot(url) {
     }
 
     [].forEach.call(document.getElementsByTagName('canvas'), canvasToImage)
-  })
+  })  
+  const timestamp = format(new Date(), 'h:mm:ssa_dd-MM-yyyy', { timeZone: 'America/New_York' });
+
+  const screenshotPath = path.resolve(__dirname, `./public/graphs/graphs_${timestamp}.png`);
   await page.screenshot({
-    path: path.resolve(__dirname, './public/graphs.png'),
+    path: screenshotPath,
     type: 'png',
-    clip: { x: 0, y: 0, width: 800, height: 800 }
+    clip: { x: 0, y: 0, width: 800, height: 600 }
   });
   await browser.close();
+  return timestamp;
 }
 (async () => {
-  await takeScreenshot(sourceURl)
+  const timestamp = await takeScreenshot(sourceURl)
   await webhook.send({
     text: 'Here\'s the daily OnBoard Stats :onboard:',
     attachments: [{
-      title: 'OnBoard Stats',
-      image_url: `${sourceURl}/graphs.png`
+      title: 'OnBoard Stats sent at ${timestamp}',
+      image_url: `${sourceURl}/graphs/graphs_${timestamp}.png`
     }]
   });
 })();
