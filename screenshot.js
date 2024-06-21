@@ -46,19 +46,12 @@ const sendHook = async () => {
   await webhook.send({
     text: 'Here\'s the daily OnBoard Stats :onboard:',
     attachments: [{
-      title: `OnBoard Stats sent at ${timestamp}`,
+      title: `<${sourceURl}|OnBoard Stats> sent at ${timestamp}`,
       image_url: `${sourceURl}/graphs/graphs_${timestamp}.png`
     }]
   });
 };
-
-cron.schedule('0 18 * * *', async () => {
-  try {
-    sendHook();
-  } catch (error) {
-      console.error('Error capturing screenshot or sending to Slack:', error);
-  }
-});
+// 6 am local time
 
 cron.schedule('0 6 * * *', async () => {
   try {
@@ -68,4 +61,11 @@ cron.schedule('0 6 * * *', async () => {
   }
 });
 
+  // cron.schedule('0 18 * * *', async () => {
+  //   try {
+  //     sendHook();
+  //   } catch (error) {
+  //       console.error('Error capturing screenshot or sending to Slack:', error);
+  //   }
+  // });
 sendHook();
