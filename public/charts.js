@@ -15,7 +15,7 @@ async function fetchData() {
 
 function renderChart(ctx, labels, data, type, title, unit, colors, callback) {
     console.log('Rendering chart:', title);
-    
+
     const chart = new Chart(ctx, {
         type: type,
         data: {
@@ -38,7 +38,7 @@ function renderChart(ctx, labels, data, type, title, unit, colors, callback) {
             plugins: {
                 tooltip: {
                     callbacks: {
-                        label: function(context) {
+                        label: function (context) {
                             return context.raw;
                         }
                     }
@@ -84,7 +84,7 @@ function renderChart(ctx, labels, data, type, title, unit, colors, callback) {
                 }
             },
             animation: {
-                onComplete: function() {
+                onComplete: function () {
                     const base64Image = chart.toBase64Image();
                     return base64Image;
                 }
@@ -102,17 +102,21 @@ async function main() {
 
     const projectsData = Object.values(data.projects).sort((a, b) => new Date(a.date) - new Date(b.date));
     const pullRequestsData = Object.entries(data.pull_requests).sort((a, b) => new Date(a[0]) - new Date(b[0]));
-
+    const stalledPullRequestsData = Object.entries(data.stalled_pull_requests).sort((a, b) => new Date(a[0]) - new Date(b[0]));
+    
     // console.log('Processed projectsData:', projectsData);
     // console.log('Processed pullRequestsData:', pullRequestsData);
 
     const filteredProjectsData = projectsData.filter(entry => entry.subdirsCount > 0);
     const filteredPullRequestsData = pullRequestsData.filter(entry => entry[1] > 0);
+    const filteredStalledPullRequestsData = stalledPullRequestsData.filter(entry => entry[1] > 0);
 
     const projectDates = filteredProjectsData.map(entry => new Date(entry.date));
     const projectCounts = filteredProjectsData.map(entry => entry.subdirsCount);
     const prDates = filteredPullRequestsData.map(entry => new Date(entry[0]));
     const prCounts = filteredPullRequestsData.map(entry => entry[1]);
+    const stalledPrDates = filteredStalledPullRequestsData.map(entry => new Date(entry[0]));
+    const stalledPrCounts = filteredStalledPullRequestsData.map(entry => entry[1]);
 
     // console.log('Filtered projectDates:', projectDates);
     // console.log('Filtered projectCounts:', projectCounts);
@@ -121,6 +125,7 @@ async function main() {
 
     const totalGrants = projectCounts[projectCounts.length - 1];
     const totalOpenPRs = prCounts[prCounts.length - 1];
+    const totalStalledPRs = stalledPrCounts[stalledPrCounts.length - 1];
 
     // console.log('Total grants:', totalGrants);
     // console.log('Total open PRs:', totalOpenPRs);
@@ -140,6 +145,15 @@ async function main() {
         pointBackground: 'rgba(153, 102, 255, 1)',
         pointBorder: 'rgba(153, 102, 255, 1)'
     });
+
+    const stalledPrCtx = document.getElementById('stalledPullRequestsChart').getContext('2d');
+    renderChart(stalledPrCtx, stalledPrDates, stalledPrCounts, 'bar', `Number of Stalled Open Pull Requests Over Time (Total number of open PRs = ${totalStalledPRs})`, 'day', {
+        background: 'rgba(255, 99, 132, 0.2)',
+        border: 'rgba(255, 99, 132, 1)',
+        pointBackground: 'rgba(255, 99, 132, 1)',
+        pointBorder: 'rgba(255, 99, 132, 1)'
+    });
+
 
 }
 
