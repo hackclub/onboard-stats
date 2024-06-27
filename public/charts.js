@@ -13,36 +13,19 @@ async function fetchData() {
     }
 }
 
-function renderChart(ctx, labels, data, type, title, unit, colors, callback) {
+function renderChart(ctx, labels, datasets, type, title, unit, options) {
     console.log('Rendering chart:', title);
 
     const chart = new Chart(ctx, {
         type: type,
         data: {
             labels: labels,
-            datasets: [{
-                data: data,
-                backgroundColor: colors.background,
-                borderColor: colors.border,
-                borderWidth: 2,
-                pointBackgroundColor: colors.pointBackground,
-                pointBorderColor: colors.pointBorder,
-                pointRadius: 3,
-                pointHoverRadius: 5,
-                fill: true
-            }]
+            datasets: datasets
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: function (context) {
-                            return context.raw;
-                        }
-                    }
-                },
                 title: {
                     display: true,
                     text: title,
@@ -51,11 +34,12 @@ function renderChart(ctx, labels, data, type, title, unit, colors, callback) {
                     }
                 },
                 legend: {
-                    display: false
+                    display: true
                 }
             },
             scales: {
                 x: {
+                    stacked: options.stacked,
                     type: 'time',
                     time: {
                         unit: unit,
@@ -77,6 +61,7 @@ function renderChart(ctx, labels, data, type, title, unit, colors, callback) {
                     }
                 },
                 y: {
+                    stacked: options.stacked,
                     beginAtZero: true,
                     ticks: {
                         precision: 0
@@ -103,9 +88,6 @@ async function main() {
     const projectsData = Object.values(data.projects).sort((a, b) => new Date(a.date) - new Date(b.date));
     const pullRequestsData = Object.entries(data.pull_requests).sort((a, b) => new Date(a[0]) - new Date(b[0]));
     const stalledPullRequestsData = Object.entries(data.stalled_pull_requests).sort((a, b) => new Date(a[0]) - new Date(b[0]));
-    
-    // console.log('Processed projectsData:', projectsData);
-    // console.log('Processed pullRequestsData:', pullRequestsData);
 
     const filteredProjectsData = projectsData.filter(entry => entry.subdirsCount > 0);
     const filteredPullRequestsData = pullRequestsData.filter(entry => entry[1] > 0);
@@ -118,43 +100,61 @@ async function main() {
     const stalledPrDates = filteredStalledPullRequestsData.map(entry => new Date(entry[0]));
     const stalledPrCounts = filteredStalledPullRequestsData.map(entry => entry[1]);
 
-    // console.log('Filtered projectDates:', projectDates);
-    // console.log('Filtered projectCounts:', projectCounts);
-    // console.log('Filtered prDates:', prDates);
-    // console.log('Filtered prCounts:', prCounts);
-
     const totalGrants = projectCounts[projectCounts.length - 1];
     const totalOpenPRs = prCounts[prCounts.length - 1];
     const totalStalledPRs = stalledPrCounts[stalledPrCounts.length - 1];
 
-    // console.log('Total grants:', totalGrants);
-    // console.log('Total open PRs:', totalOpenPRs);
-
     const projectsCtx = document.getElementById('projectsChart').getContext('2d');
-    renderChart(projectsCtx, projectDates, projectCounts, 'line', `Number of Funded Projects Over Time (Total number of grants given = ${totalGrants})`, 'month', {
-        background: 'rgba(75, 192, 192, 0.2)',
-        border: 'rgba(75, 192, 192, 1)',
-        pointBackground: 'rgba(75, 192, 192, 1)',
-        pointBorder: 'rgba(75, 192, 192, 1)'
+    renderChart(projectsCtx, projectDates, [{
+        label: 'Funded Projects',
+        data: projectCounts,
+        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+        borderColor: 'rgba(75, 192, 192, 1)',
+        pointBackgroundColor: 'rgba(75, 192, 192, 1)',
+        pointBorderColor: 'rgba(75, 192, 192, 1)',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        fill: true
+    }], 'line', `Number of Funded Projects Over Time (Total number of grants given = ${totalGrants})`, 'month', {
+        stacked: false
     });
 
     const prCtx = document.getElementById('pullRequestsChart').getContext('2d');
-    renderChart(prCtx, prDates, prCounts, 'bar', `Number of Open Pull Requests Over Time (Total number of open PRs = ${totalOpenPRs})`, 'day', {
-        background: 'rgba(153, 102, 255, 0.2)',
-        border: 'rgba(153, 102, 255, 1)',
-        pointBackground: 'rgba(153, 102, 255, 1)',
-        pointBorder: 'rgba(153, 102, 255, 1)'
+    renderChart(prCtx, prDates, [{
+        label: 'Open Pull Requests',
+        data: prCounts,
+        backgroundColor: 'rgba(153, 102, 255, 0.2)',
+        borderColor: 'rgba(153, 102, 255, 1)',
+        pointBackgroundColor: 'rgba(153, 102, 255, 1)',
+        pointBorderColor: 'rgba(153, 102, 255, 1)',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        fill: true
+    }], 'bar', `Number of Open Pull Requests Over Time (Total number of open PRs = ${totalOpenPRs})`, 'day', {
+        stacked: false
     });
 
-    const stalledPrCtx = document.getElementById('stalledPullRequestsChart').getContext('2d');
-    renderChart(stalledPrCtx, stalledPrDates, stalledPrCounts, 'bar', `Number of Stalled Open Pull Requests Over Time (Total number of open PRs = ${totalStalledPRs})`, 'day', {
-        background: 'rgba(255, 99, 132, 0.2)',
-        border: 'rgba(255, 99, 132, 1)',
-        pointBackground: 'rgba(255, 99, 132, 1)',
-        pointBorder: 'rgba(255, 99, 132, 1)'
+    const combinedPrCtx = document.getElementById('stalledPullRequestsChart').getContext('2d');
+    renderChart(combinedPrCtx, stalledPrDates, [
+        {
+            label: 'Open Pull Requests',
+            data: prCounts,
+            backgroundColor: 'rgba(153, 102, 255, 0.2)',
+            borderColor: 'rgba(153, 102, 255, 1)',
+            borderWidth: 2
+        },
+        {
+            label: 'Stalled Pull Requests',
+            data: stalledPrCounts,
+            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 2
+        }
+    ], 'bar', `Number of Open and Stalled Pull Requests Over Time (Total number of open PRs = ${totalOpenPRs}, Total number of stalled PRs = ${totalStalledPRs})`, 'day', {
+        stacked: true
     });
-
-
 }
 
 main();
