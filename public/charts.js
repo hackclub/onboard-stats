@@ -136,6 +136,7 @@ async function main() {
         stacked: false
     });
 
+
     const combinedPrCtx = document.getElementById('stalledPullRequestsChart').getContext('2d');
     renderChart(combinedPrCtx, stalledPrDates, [
         {
