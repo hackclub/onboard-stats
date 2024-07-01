@@ -95,7 +95,6 @@ async function main() {
 
     const projectDates = filteredProjectsData.map(entry => new Date(entry.date));
     const projectCounts = filteredProjectsData.map(entry => entry.subdirsCount);
-    const prDates = filteredPullRequestsData.map(entry => new Date(entry[0]));
     const prCounts = filteredPullRequestsData.map(entry => entry[1]);
     const stalledPrDates = filteredStalledPullRequestsData.map(entry => new Date(entry[0]));
     const stalledPrCounts = filteredStalledPullRequestsData.map(entry => entry[1]);
@@ -119,23 +118,6 @@ async function main() {
     }], 'line', `Number of Funded Projects Over Time (Total number of grants given = ${totalGrants})`, 'month', {
         stacked: false
     });
-
-    const prCtx = document.getElementById('pullRequestsChart').getContext('2d');
-    renderChart(prCtx, prDates, [{
-        label: 'Open Pull Requests',
-        data: prCounts,
-        backgroundColor: 'rgba(153, 102, 255, 0.2)',
-        borderColor: 'rgba(153, 102, 255, 1)',
-        pointBackgroundColor: 'rgba(153, 102, 255, 1)',
-        pointBorderColor: 'rgba(153, 102, 255, 1)',
-        borderWidth: 2,
-        pointRadius: 3,
-        pointHoverRadius: 5,
-        fill: true
-    }], 'bar', `Number of Open Pull Requests Over Time (Total number of open PRs = ${totalOpenPRs})`, 'day', {
-        stacked: false
-    });
-
 
     const combinedPrCtx = document.getElementById('stalledPullRequestsChart').getContext('2d');
     renderChart(combinedPrCtx, stalledPrDates, [
