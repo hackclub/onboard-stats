@@ -140,17 +140,17 @@ async function main() {
     const combinedPrCtx = document.getElementById('stalledPullRequestsChart').getContext('2d');
     renderChart(combinedPrCtx, stalledPrDates, [
         {
-            label: 'Open Pull Requests',
-            data: prCounts,
-            backgroundColor: 'rgba(153, 102, 255, 0.2)',
-            borderColor: 'rgba(153, 102, 255, 1)',
-            borderWidth: 2
-        },
-        {
             label: 'Stalled Pull Requests',
             data: stalledPrCounts,
             backgroundColor: 'rgba(255, 99, 132, 0.2)',
             borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 2
+        },
+        {
+            label: 'Open Pull Requests',
+            data: prCounts,
+            backgroundColor: 'rgba(153, 102, 255, 0.2)',
+            borderColor: 'rgba(153, 102, 255, 1)',
             borderWidth: 2
         }
     ], 'bar', `Number of Open and Stalled Pull Requests Over Time (Total number of open PRs = ${totalOpenPRs}, Total number of stalled PRs = ${totalStalledPRs})`, 'day', {
