@@ -67,20 +67,28 @@ const getOpenPullRequestsCount = async () => {
     let openCount = 0;
     let stalledCount = 0;
     console.log("begin getOpenPullRequestsCount");
+    
     while (url) {
         const response = await axios.get(url, getHeaders());
-        openCount += response.data.length;
-        response.data.slice(0, openCount).forEach(item => {
-            if (new Date(item.created_at) < new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)) {
+        const pullRequests = response.data;
+        openCount += pullRequests.length;
+        
+        pullRequests.forEach(pr => {
+            const isStalled = pr.labels.some(label => label.name.toLowerCase() === 'stalled');
+            if (isStalled) {
                 stalledCount++;
             }
         });
-        url = response.headers.link && response.headers.link.includes('rel="next"')
-            ? response.headers.link.split(';')[0].slice(1, -1)
-            : null;
+        
+        const linkHeader = response.headers.link;
+        if (linkHeader && linkHeader.includes('rel="next"')) {
+            url = linkHeader.split(',').find(s => s.includes('rel="next"')).split(';')[0].slice(1, -1);
+        } else {
+            url = null;
+        }
     }
+    
     console.log("end getOpenPullRequestsCount");
-    openCount -= stalledCount;
     return [openCount, stalledCount];
 };
 
