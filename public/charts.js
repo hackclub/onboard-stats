@@ -95,10 +95,11 @@ async function main() {
 
     const projectDates = filteredProjectsData.map(entry => new Date(entry.date));
     const projectCounts = filteredProjectsData.map(entry => entry.subdirsCount);
-    const prCounts = filteredPullRequestsData.map(entry => entry[1]);
     const stalledPrDates = filteredStalledPullRequestsData.map(entry => new Date(entry[0]));
     const stalledPrCounts = filteredStalledPullRequestsData.map(entry => entry[1]);
-
+    
+    const prCounts = filteredPullRequestsData.map((entry, index) => entry[1] - (stalledPrCounts[index] || 0));
+    
     const totalGrants = projectCounts[projectCounts.length - 1];
     const totalOpenPRs = prCounts[prCounts.length - 1];
     const totalStalledPRs = stalledPrCounts[stalledPrCounts.length - 1];
