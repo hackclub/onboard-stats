@@ -1,16 +1,20 @@
-import 'dotenv/config';
-import express from 'express';
-import { Octokit } from 'octokit';
-import fs from 'fs';
-import cron from 'node-cron';
-import path from 'path';
+import "dotenv/config";
+import express from "express";
+import { Octokit } from "octokit";
+import fs from "fs";
+import cron from "node-cron";
+import path from "path";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
+
+dayjs.extend(utc);
 
 const app = express();
 const PORT = process.env.PORT || 3030;
 
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 const { OWNER, REPO, PROJECTS_DIR, HISTORY_FILE } = process.env;
-app.use(express.static('public'));
+app.use(express.static("public"));
 
 const verify = async () => {
     try {
@@ -21,92 +25,215 @@ const verify = async () => {
     }
 };
 
-const fetchCommits = async () => {
-    let commits = [];
-    let page = 1;
-    while (true) {
-        const { data } = await octokit.rest.repos.listCommits({ owner: OWNER, repo: REPO, per_page: 100, page });
-        if (data.length === 0) break;
-        commits = commits.concat(data);
-        page++;
+const fetchPaginatedData = async (method, params, dataKey = "data") => {
+    let data = [];
+    for (let page = 1; ; page++) {
+        const { [dataKey]: items } = await method({ ...params, page });
+        if (!items.length) break;
+        data = [...data, ...items];
     }
-    return commits;
+    return data;
 };
 
-const fetchPRsByDate = async (date) => {
-    const query = `repo:${OWNER}/${REPO} type:pr state:open created:<=${date}`;
-    const { data } = await octokit.rest.search.issuesAndPullRequests({ q: query });
-    return data.total_count;
+const getCommits = () =>
+    fetchPaginatedData(octokit.rest.repos.listCommits, {
+        owner: OWNER,
+        repo: REPO,
+        per_page: 100,
+    });
+
+const getPRsByDate = async (date) => {
+    const targetDay = dayjs.utc(date);
+    const nextDay = targetDay.add(1, "day");
+
+    const prs = await fetchPaginatedData(octokit.rest.pulls.list, {
+        owner: OWNER,
+        repo: REPO,
+        state: "all",
+        per_page: 100,
+    });
+
+    return prs.filter(({ created_at, closed_at }) => {
+        const createdAt = dayjs.utc(created_at);
+        const closedAt = closed_at ? dayjs.utc(closed_at) : null;
+        return createdAt.isBefore(nextDay) && (!closedAt || closedAt.isAfter(targetDay));
+    }).length;
 };
 
-const fetchSubdirCount = async (sha) => {
+const getSubdirCount = async (sha) => {
     try {
-        const { data } = await octokit.rest.repos.getContent({ owner: OWNER, repo: REPO, path: PROJECTS_DIR, ref: sha });
-        return data.filter(item => item.type === 'dir').length;
+        const { data } = await octokit.rest.repos.getContent({
+            owner: OWNER,
+            repo: REPO,
+            path: PROJECTS_DIR,
+            ref: sha,
+        });
+        return data.filter(({ type }) => type === "dir").length;
     } catch {
         return 0;
     }
 };
 
-const fetchOpenPRCounts = async () => {
-    let openCount = 0, stalledCount = 0, page = 1;
-    while (true) {
-        const { data } = await octokit.rest.pulls.list({ owner: OWNER, repo: REPO, state: 'open', per_page: 100, page });
-        if (data.length === 0) break;
-        openCount += data.length;
-        stalledCount += data.filter(pr => pr.labels.some(label => label.name.toLowerCase() === 'stalled')).length;
-        page++;
-    }
-    return [openCount, stalledCount];
-};
-
-const loadHistory = () => {
+const loadHist = () => {
     if (fs.existsSync(HISTORY_FILE)) {
         try {
-            return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
+            return JSON.parse(fs.readFileSync(HISTORY_FILE, "utf-8"));
         } catch (error) {
             console.error(`Error parsing ${HISTORY_FILE}:`, error);
         }
     }
-    return { projects: {}, prs: {} };
+    return { projects: {}, prs: {}, stalled: {} };
 };
 
-const saveHistory = (histData) => {
+const saveHist = (histData) => {
     fs.writeFileSync(HISTORY_FILE, JSON.stringify(histData, null, 4));
 };
 
-const updateHist = async () => {
-    let histData = loadHistory();
+const fetchPRDetails = async (prNumber) => {
+    try {
+        const result = await octokit.graphql(
+            `
+            query PullRequestByNumber($owner: String!, $repo: String!, $pr_number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $pr_number) {
+                        comments(first: 100) {
+                            nodes {
+                                id
+                                author {
+                                    login
+                                }
+                                createdAt
+                            }
+                        }
+                        reviews(first: 100) {
+                            nodes {
+                                id
+                                author {
+                                    login
+                                }
+                                createdAt
+                            }
+                        }
+                    }
+                }
+            }
+        `,
+            { owner: OWNER, repo: REPO, pr_number: prNumber }
+        );
+        return result.repository.pullRequest;
+    } catch (error) {
+        console.error(`Error fetching PR details for PR #${prNumber}: ${error.message}`);
+        return null;
+    }
+};
 
-    const commits = await fetchCommits();
-    for (const commit of commits) {
-        const sha = commit.sha;
-        const date = commit.commit.committer.date.split('T')[0];
+const wasStalledPR = async (pr, checkDate) => {
+    const hasDevLabel = pr.labels.some(({ name }) => name.toLowerCase() === "dev");
+    if (hasDevLabel) return false;
+
+    const prDetails = await fetchPRDetails(pr.number);
+    if (!prDetails) return false;
+
+    const { comments, reviews } = prDetails;
+    if (!comments.nodes.length && !reviews.nodes.length) return false;
+
+    const sevenDaysAgo = dayjs.utc(checkDate).subtract(7, "days");
+    const allComments = [...comments.nodes, ...reviews.nodes].filter(({ createdAt }) =>
+        dayjs.utc(createdAt).isBefore(sevenDaysAgo)
+    );
+
+    if (!allComments.length) return false;
+
+    const authorReplies = allComments.some(({ id, author: { login } }) =>
+        allComments.some(
+            ({ in_reply_to_id, author }) => in_reply_to_id === id && author.login === pr.user.login
+        )
+    );
+
+    return !authorReplies;
+};
+
+const getStalledPRsByDate = async (date) => {
+    const targetDay = dayjs.utc(date);
+    const nextDay = targetDay.add(1, "day");
+
+    const prs = await fetchPaginatedData(octokit.rest.pulls.list, {
+        owner: OWNER,
+        repo: REPO,
+        state: "all",
+        per_page: 100,
+    });
+
+    const stalledPRs = await Promise.all(
+        prs.filter(({ created_at, closed_at }) => {
+            const createdAt = dayjs.utc(created_at);
+            const closedAt = closed_at ? dayjs.utc(closed_at) : null;
+            return createdAt.isBefore(nextDay) && (!closedAt || closedAt.isAfter(targetDay));
+        }).map(async (pr) => {
+            const wasStalled = await wasStalledPR(pr, date);
+            return wasStalled ? pr.number : null;
+        })
+    );
+
+    return stalledPRs.filter(Boolean).length;
+};
+
+const updateHist = async () => {
+    console.log("Updating history");
+    let histData = loadHist();
+
+    if (!histData.projects) histData.projects = {};
+    if (!histData.pull_requests) histData.pull_requests = {};
+    if (!histData.stalled_pull_requests) histData.stalled_pull_requests = {};
+
+    const commits = await getCommits();
+    commits.reverse();
+
+    for (const { sha, commit: { committer: { date: commitDate } } } of commits) {
+        const date = commitDate.split('T')[0];
+
         if (!histData.projects[sha]) {
-            console.log("here")
-            const subdirCount = await fetchSubdirCount(sha);
-            histData.projects[sha] = { date, subdirCount };
-        }
-        if (!histData.prs[date]) {
-            const openPRCount = await fetchPRsByDate(date);
-            histData.prs[date] = openPRCount;
+            console.log(`Fetching subdir count for ${sha}`);
+            const subdirsCount = await getSubdirCount(sha);
+            histData.projects[sha] = { date, subdirsCount };
         }
     }
 
-    saveHistory(histData);
+    const startDate = dayjs.utc("2024-06-01");
+    const endDate = dayjs.utc().endOf('day');
+    let date = startDate;
+
+    while (date.isBefore(endDate)) {
+        const dateString = date.format("YYYY-MM-DD");
+        if (!histData.pull_requests[dateString]) {
+            console.log(`Fetching PRs for ${dateString}`);
+            const prCount = await getPRsByDate(dateString);
+            histData.pull_requests[dateString] = prCount;
+            console.log(histData.pull_requests[dateString]);
+        }
+        if (!histData.stalled_pull_requests[dateString]) {
+            console.log(`Fetching stalled PRs for ${dateString}`);
+            const stalledCount = await getStalledPRsByDate(dateString);
+            histData.stalled_pull_requests[dateString] = stalledCount;
+            console.log(histData.stalled_pull_requests[dateString]);
+        }
+        date = date.add(1, 'day');
+    }
+
+    saveHist(histData);
 };
 
-app.get('/data', (req, res) => {
-    const histData = loadHistory();
+app.get("/data", (req, res) => {
+    const histData = loadHist();
     res.json(histData);
 });
 
-cron.schedule('*/15 * * * *', async () => {
-    await updateHist();
-});
+// cron.schedule("*/15 * * * *", async () => {
+//     await updateHist();
+// });
 
-app.get('/', (req, res) => {
-    res.sendFile(path.join(path.resolve(), 'public', 'index.html'));
+app.get("/", (req, res) => {
+    res.sendFile(path.join(path.resolve(), "public", "index.html"));
 });
 
 app.listen(PORT, async () => {
