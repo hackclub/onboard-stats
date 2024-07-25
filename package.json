@@ -6,15 +6,19 @@
     "start": "concurrently \"node server.js\" \"node charts.js\""
   },
   "keywords": [],
-  "author": "",
+  "author": "cskartikey",
+  "type": "module",
   "license": "ISC",
   "description": "",
   "dependencies": {
     "@slack/webhook": "^7.0.2",
     "axios": "^1.7.2",
+    "dayjs": "^1.11.12",
+    "dayjs-plugin-utc": "^0.1.2",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "node-cron": "^3.0.3",
+    "octokit": "^4.0.2",
     "puppeteer": "^22.11.0"
   }
 }
