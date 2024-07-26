@@ -1,127 +1,91 @@
+let projectsChartInstance = null;
+let prChartInstance = null;
+
 async function fetchData() {
     try {
         const response = await fetch('/data');
         if (!response.ok) {
             throw new Error('Network response was not ok ' + response.statusText);
         }
-        const data = await response.json();
-        console.log('Fetched data:', data);
-        return data;
+        return await response.json();
     } catch (error) {
         console.error('Fetch data failed:', error);
         return null;
     }
 }
 
-function renderChart(ctx, labels, datasets, type, title, unit, options) {
-    console.log('Rendering chart:', title);
-
-    const chart = new Chart(ctx, {
+function renderChart(ctx, labels, datasets, type, title, unit, opts, chartInstance) {
+    if (chartInstance) chartInstance.destroy();
+    return new Chart(ctx, {
         type: type,
-        data: {
-            labels: labels,
-            datasets: datasets
-        },
+        data: { labels: labels, datasets: datasets },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: { duration: 1000, easing: 'easeOutQuart' },
             plugins: {
-                title: {
-                    display: true,
-                    text: title,
-                    font: {
-                        size: 16
-                    }
-                },
-                legend: {
-                    display: true
-                }
+                title: { display: true, text: title, font: { size: 16 }, color: '#e0e0e0' },
+                legend: { display: true, labels: { color: '#e0e0e0' } }
             },
             scales: {
                 x: {
-                    stacked: options.stacked,
+                    stacked: opts.stacked,
                     type: 'time',
-                    time: {
-                        unit: unit,
-                        tooltipFormat: 'll',
-                        displayFormats: {
-                            month: 'MMM YYYY'
-                        }
-                    },
-                    adapters: {
-                        date: {
-                            locale: moment.locale()
-                        }
-                    },
-                    ticks: {
-                        maxRotation: 0,
-                        minRotation: 0,
-                        autoSkip: true,
-                        maxTicksLimit: 10
-                    }
+                    time: { unit: unit, tooltipFormat: 'll', displayFormats: { month: 'MMM YYYY' } },
+                    adapters: { date: { locale: moment.locale() } },
+                    ticks: { color: '#e0e0e0', maxRotation: 0, minRotation: 0, autoSkip: true, maxTicksLimit: 10 }
                 },
-                y: {
-                    stacked: options.stacked,
-                    beginAtZero: true,
-                    ticks: {
-                        precision: 0
-                    }
-                }
-            },
-            animation: {
-                onComplete: function () {
-                    const base64Image = chart.toBase64Image();
-                    return base64Image;
-                }
+                y: { stacked: opts.stacked, beginAtZero: true, ticks: { precision: 0, color: '#e0e0e0' } }
             }
         }
     });
 }
 
-async function main() {
+async function main(tf) {
     const data = await fetchData();
-    if (!data) {
-        console.log('No data fetched');
-        return;
-    }
+    if (!data) return;
 
-    const projectsData = Object.values(data.projects).sort((a, b) => new Date(a.date) - new Date(b.date));
-    const pullRequestsData = Object.entries(data.pull_requests).sort((a, b) => new Date(a[0]) - new Date(b[0]));
-    const stalledPullRequestsData = Object.entries(data.stalled_pull_requests).sort((a, b) => new Date(a[0]) - new Date(b[0]));
+    const processData = (dataObj) => Object.entries(dataObj)
+        .sort((a, b) => new Date(a[0]) - new Date(b[0]))
+        .map(([date, count]) => ({ date: new Date(date), count }));
 
-    const filteredProjectsData = projectsData.filter(entry => entry.subdirsCount > 0);
-    const filteredPullRequestsData = pullRequestsData.filter(entry => entry[1] > 0);
-    const filteredStalledPullRequestsData = stalledPullRequestsData.filter(entry => entry[1] > 0);
+    const filterData = (dataArr) => dataArr.filter(entry => entry.count > 0);
+    const filterByTf = (entries, months) => {
+        const startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - months);
+        return entries.filter(entry => entry.date >= startDate);
+    };
 
-    const projectDates = filteredProjectsData.map(entry => new Date(entry.date));
-    const projectCounts = filteredProjectsData.map(entry => entry.subdirsCount);
-    const stalledPrDates = filteredStalledPullRequestsData.map(entry => new Date(entry[0]));
-    const stalledPrCounts = filteredStalledPullRequestsData.map(entry => entry[1]);
-    
-    const prCounts = filteredPullRequestsData.map((entry, index) => entry[1] - (stalledPrCounts[index] || 0));
-    
-    const totalGrants = projectCounts[projectCounts.length - 1];
-    const totalOpenPRs = prCounts[prCounts.length - 1];
-    const totalStalledPRs = stalledPrCounts[stalledPrCounts.length - 1];
+    const projects = filterData(Object.values(data.projects).map(p => ({ date: new Date(p.date), count: p.subdirsCount })));
+    const prs = processData(data.pull_requests);
+    const stalledPrs = processData(data.stalled_pull_requests);
 
-    const projectsCtx = document.getElementById('projectsChart').getContext('2d');
-    renderChart(projectsCtx, projectDates, [{
+    const filteredPrs = filterByTf(prs, tf);
+    const filteredStalledPrs = filterByTf(stalledPrs, tf);
+
+    const projDates = projects.map(entry => entry.date);
+    const projCounts = projects.map(entry => entry.count);
+
+    const prDates = filteredPrs.map(entry => entry.date);
+    const prCounts = filteredPrs.map(entry => entry.count);
+
+    const stalledPrDates = filteredStalledPrs.map(entry => entry.date);
+    const stalledPrCounts = filteredStalledPrs.map(entry => entry.count);
+
+    const openPrCounts = prCounts.map((count, index) => count - (stalledPrCounts[index] || 0));
+
+    const projCtx = document.getElementById('projectsChart').getContext('2d');
+    projectsChartInstance = renderChart(projCtx, projDates, [{
         label: 'Funded Projects',
-        data: projectCounts,
+        data: projCounts,
         backgroundColor: 'rgba(75, 192, 192, 0.2)',
         borderColor: 'rgba(75, 192, 192, 1)',
-        pointBackgroundColor: 'rgba(75, 192, 192, 1)',
-        pointBorderColor: 'rgba(75, 192, 192, 1)',
         borderWidth: 2,
-        pointRadius: 3,
-        pointHoverRadius: 5,
         fill: true
-    }], 'line', `Number of Funded Projects Over Time (Total number of grants given = ${totalGrants})`, 'month', {
-        stacked: false
-    });
+    }], 'line', `Number of Funded Projects Over Time (Total: ${projCounts[projCounts.length - 1]})`, 'month', { stacked: false }, projectsChartInstance);
 
-    const combinedPrCtx = document.getElementById('stalledPullRequestsChart').getContext('2d');
-    renderChart(combinedPrCtx, stalledPrDates, [
+    const prCtx = document.getElementById('stalledPullRequestsChart').getContext('2d');
+    prChartInstance = renderChart(prCtx, prDates, [
         {
             label: 'Stalled Pull Requests',
             data: stalledPrCounts,
@@ -131,14 +95,17 @@ async function main() {
         },
         {
             label: 'Open Pull Requests',
-            data: prCounts,
+            data: openPrCounts,
             backgroundColor: 'rgba(153, 102, 255, 0.2)',
             borderColor: 'rgba(153, 102, 255, 1)',
             borderWidth: 2
         }
-    ], 'bar', `Number of Open and Stalled Pull Requests Over Time (Total number of open PRs = ${totalOpenPRs}, Total number of stalled PRs = ${totalStalledPRs})`, 'day', {
-        stacked: true
-    });
+    ], 'bar', `Open and Stalled Pull Requests (Open: ${openPrCounts[openPrCounts.length - 1]}, Stalled: ${stalledPrCounts[stalledPrCounts.length - 1]})`, 'day', { stacked: true }, prChartInstance);
 }
 
-main();
+main(1);
+
+document.getElementById('timeframe').addEventListener('change', (event) => {
+    const tf = parseInt(event.target.value, 10);
+    main(tf);
+});
