@@ -205,13 +205,14 @@ const updateHist = async () => {
 
     while (date.isBefore(endDate)) {
         const dateString = date.format("YYYY-MM-DD");
-        if (!histData.pull_requests[dateString]) {
+        const isToday = date.isSame(dayjs.utc(), 'day');
+        if (!histData.pull_requests[dateString] || isToday) {
             console.log(`Fetching PRs for ${dateString}`);
             const prCount = await getPRsByDate(dateString);
             histData.pull_requests[dateString] = prCount;
             console.log(histData.pull_requests[dateString]);
         }
-        if (!histData.stalled_pull_requests[dateString]) {
+        if (!histData.stalled_pull_requests[dateString] || isToday) {
             console.log(`Fetching stalled PRs for ${dateString}`);
             const stalledCount = await getStalledPRsByDate(dateString);
             histData.stalled_pull_requests[dateString] = stalledCount;
@@ -228,9 +229,9 @@ app.get("/data", (req, res) => {
     res.json(histData);
 });
 
-// cron.schedule("*/15 * * * *", async () => {
-//     await updateHist();
-// });
+cron.schedule("*/15 * * * *", async () => {
+    await updateHist();
+});
 
 app.get("/", (req, res) => {
     res.sendFile(path.join(path.resolve(), "public", "index.html"));
