@@ -60,11 +60,12 @@ async function main(tf) {
     const prs = processData(data.pull_requests);
     const stalledPrs = processData(data.stalled_pull_requests);
 
+    const filteredProjects = filterByTf(projects, tf);
     const filteredPrs = filterByTf(prs, tf);
     const filteredStalledPrs = filterByTf(stalledPrs, tf);
 
-    const projDates = projects.map(entry => entry.date);
-    const projCounts = projects.map(entry => entry.count);
+    const projDates = filteredProjects.map(entry => entry.date);
+    const projCounts = filteredProjects.map(entry => entry.count);
 
     const prDates = filteredPrs.map(entry => entry.date);
     const prCounts = filteredPrs.map(entry => entry.count);
