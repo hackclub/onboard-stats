@@ -1,78 +1,67 @@
-const { IncomingWebhook } = require("@slack/webhook");
-const puppeteer = require("puppeteer");
-const path = require("path");
-const { format } = require("date-fns");
-const cron = require("node-cron");
-require("dotenv").config();
+import { IncomingWebhook } from "@slack/webhook";
+import puppeteer from "puppeteer";
+import path from "path";
+import { format } from "date-fns";
+import cron from "node-cron";
+import dotenv from "dotenv";
 
-const slackWebhookUrl = process.env.SLACK_WEBHOOK_URL;
-const sourceURl = process.env.DOMAIN;
+dotenv.config();
 
-const webhook = new IncomingWebhook(slackWebhookUrl);
+const { SLACK_WEBHOOK_URL, DOMAIN } = process.env;
+const webhook = new IncomingWebhook(SLACK_WEBHOOK_URL);
 
-async function takeScreenshot(url) {
+const takeScreenshot = async (url) => {
   const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.goto(url, { waitUntil: "networkidle0" });
+  
   await page.evaluate(() => {
-    function canvasToImage(element) {
+    const canvasToImage = (element) => {
       const dataUrl = element.toDataURL();
       const image = document.createElement("img");
       image.src = dataUrl;
-
-      const properties = ["width", "height", "position", "left", "top"];
-      properties.forEach((key) => (image.style[key] = element.style[key]));
+      ["width", "height", "position", "left", "top"].forEach(
+        (key) => (image.style[key] = element.style[key])
+      );
       image.className = element.className;
-
       element.parentNode?.insertBefore(image, element);
-      element.parentNode?.removeChild(element);
-    }
-
-    [].forEach.call(document.getElementsByTagName("canvas"), canvasToImage);
+      element.remove();
+    };
+    document.querySelectorAll("canvas").forEach(canvasToImage);
   });
+
   const timestamp = format(new Date(), "h:mm:ssa_dd-MM-yyyy", {
     timeZone: "America/New_York",
   });
 
   const screenshotPath = path.resolve(
-    __dirname,
-    `./public/graphs/graphs_${timestamp}.png`,
+    path.dirname(""),
+    `./public/graphs/graphs_${timestamp}.png`
   );
+  
   await page.screenshot({
     path: screenshotPath,
     type: "png",
     clip: { x: 0, y: 0, width: 800, height: 600 },
   });
+
   await browser.close();
   return timestamp;
-}
+};
+
 const sendHook = async () => {
-  const timestamp = await takeScreenshot(sourceURl);
+  const timestamp = await takeScreenshot(DOMAIN);
   await webhook.send({
     text: "Here's the daily OnBoard Stats :onboard:",
     attachments: [
       {
-        title: `<${sourceURl}|OnBoard Stats> sent at ${timestamp}`,
-        image_url: `${sourceURl}/graphs/graphs_${timestamp}.png`,
+        title: `<${DOMAIN}|OnBoard Stats> sent at ${timestamp}`,
+        image_url: `${DOMAIN}/graphs/graphs_${timestamp}.png`,
       },
     ],
   });
 };
-// 6 am local time
 
-cron.schedule("0 6 * * *", async () => {
-  try {
-    sendHook();
-  } catch (error) {
-    console.error("Error capturing screenshot or sending to Slack:", error);
-  }
-});
+cron.schedule("0 6 * * *", sendHook);
 
-// cron.schedule('0 18 * * *', async () => {
-//   try {
-//     sendHook();
-//   } catch (error) {
-//       console.error('Error capturing screenshot or sending to Slack:', error);
-//   }
-// });
 sendHook();
