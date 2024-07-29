@@ -1,110 +1,248 @@
-const express = require('express');
-const axios = require('axios');
-const fs = require('fs');
-const cron = require('node-cron');
-const path = require('path');
+import "dotenv/config";
+import express from "express";
+import { Octokit } from "octokit";
+import fs from "fs";
+import cron from "node-cron";
+import path from "path";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
+
+dayjs.extend(utc);
 
 const app = express();
-const PORT = process.env.PORT || 3119;
+const PORT = process.env.PORT || 3030;
 
-const GITHUB_TOKEN = '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';
-const OWNER = 'hackclub';
-const REPO = 'onboard';
-const PROJECTS_DIR = 'projects';
-const HISTORY_FILE = 'commit_history.json';
+const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+const { OWNER, REPO, PROJECTS_DIR, HISTORY_FILE } = process.env;
+app.use(express.static("public"));
 
-app.use(express.static('public'));
-
-const getHeaders = () => ({
-    headers: {
-        Authorization: `token ${GITHUB_TOKEN}`
+const verify = async () => {
+    try {
+        await octokit.rest.users.getAuthenticated();
+        return true;
+    } catch {
+        return false;
     }
-});
-
-const getCommits = async () => {
-    let url = `https://api.github.com/repos/${OWNER}/${REPO}/commits`;
-    let commits = [];
-    console.log("begin getCommits");
-    while (url) {
-        const response = await axios.get(url, getHeaders());
-        commits = commits.concat(response.data);
-        url = response.headers.link && response.headers.link.includes('rel="next"')
-            ? response.headers.link.split(';')[0].slice(1, -1)
-            : null;
-    }
-    console.log("end getCommits");
-    return commits;
 };
 
-const getSubdirectoriesCountAtCommit = async (commit_sha) => {
-    console.log("begin getSubdirectoriesCountAtCommit");
+const fetchPaginatedData = async (method, params, dataKey = "data") => {
+    let data = [];
+    for (let page = 1; ; page++) {
+        const { [dataKey]: items } = await method({ ...params, page });
+        if (!items.length) break;
+        data = [...data, ...items];
+    }
+    return data;
+};
+
+const getCommits = () =>
+    fetchPaginatedData(octokit.rest.repos.listCommits, {
+        owner: OWNER,
+        repo: REPO,
+        per_page: 100,
+    });
+
+const getPRsByDate = async (date) => {
+    const targetDay = dayjs.utc(date);
+    const nextDay = targetDay.add(1, "day");
+
+    const prs = await fetchPaginatedData(octokit.rest.pulls.list, {
+        owner: OWNER,
+        repo: REPO,
+        state: "all",
+        per_page: 100,
+    });
+
+    return prs.filter(({ created_at, closed_at }) => {
+        const createdAt = dayjs.utc(created_at);
+        const closedAt = closed_at ? dayjs.utc(closed_at) : null;
+        return createdAt.isBefore(nextDay) && (!closedAt || closedAt.isAfter(targetDay));
+    }).length;
+};
+
+const getSubdirCount = async (sha) => {
     try {
-        const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PROJECTS_DIR}?ref=${commit_sha}`;
-        const response = await axios.get(url, getHeaders());
-        console.log("end getSubdirectoriesCountAtCommit");
-        return response.data.filter(item => item.type === 'dir').length;
-    } catch (error) {
-        console.log("error getSubdirectoriesCountAtCommit");
+        const { data } = await octokit.rest.repos.getContent({
+            owner: OWNER,
+            repo: REPO,
+            path: PROJECTS_DIR,
+            ref: sha,
+        });
+        return data.filter(({ type }) => type === "dir").length;
+    } catch {
         return 0;
     }
 };
 
-const getOpenPullRequestsCount = async () => {
-    let url = `https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open`;
-    let openCount = 0;
-    console.log("begin getOpenPullRequestsCount");
-    while (url) {
-        const response = await axios.get(url, getHeaders());
-        openCount += response.data.length;
-        url = response.headers.link && response.headers.link.includes('rel="next"')
-            ? response.headers.link.split(';')[0].slice(1, -1)
-            : null;
+const loadHist = () => {
+    if (fs.existsSync(HISTORY_FILE)) {
+        try {
+            return JSON.parse(fs.readFileSync(HISTORY_FILE, "utf-8"));
+        } catch (error) {
+            console.error(`Error parsing ${HISTORY_FILE}:`, error);
+        }
     }
-    console.log("end getOpenPullRequestsCount");
-    return openCount;
+    return { projects: {}, prs: {}, stalled: {} };
 };
 
-const updateHistory = async () => {
-    console.log("begin updateHistory");
-    let historyData = fs.existsSync(HISTORY_FILE) ? JSON.parse(fs.readFileSync(HISTORY_FILE)) : { projects: {}, pull_requests: {} };
-    const commits = await getCommits();
+const saveHist = (histData) => {
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(histData, null, 4));
+};
 
-    for (const commit of commits) {
-        const sha = commit.sha;
-        const date = commit.commit.committer.date;
-        if (!historyData.projects[sha]) {
-            const subdirsCount = await getSubdirectoriesCountAtCommit(sha);
-            historyData.projects[sha] = { date, subdirsCount };
+const fetchPRDetails = async (prNumber) => {
+    try {
+        const result = await octokit.graphql(
+            `
+            query PullRequestByNumber($owner: String!, $repo: String!, $pr_number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $pr_number) {
+                        comments(first: 100) {
+                            nodes {
+                                id
+                                author {
+                                    login
+                                }
+                                createdAt
+                            }
+                        }
+                        reviews(first: 100) {
+                            nodes {
+                                id
+                                author {
+                                    login
+                                }
+                                createdAt
+                            }
+                        }
+                    }
+                }
+            }
+        `,
+            { owner: OWNER, repo: REPO, pr_number: prNumber }
+        );
+        return result.repository.pullRequest;
+    } catch (error) {
+        console.error(`Error fetching PR details for PR #${prNumber}: ${error.message}`);
+        return null;
+    }
+};
+
+const wasStalledPR = async (pr, checkDate) => {
+    const hasDevLabel = pr.labels.some(({ name }) => name.toLowerCase() === "dev");
+    if (hasDevLabel) return false;
+
+    const prDetails = await fetchPRDetails(pr.number);
+    if (!prDetails) return false;
+
+    const { comments, reviews } = prDetails;
+    if (!comments.nodes.length && !reviews.nodes.length) return false;
+
+    const sevenDaysAgo = dayjs.utc(checkDate).subtract(7, "days");
+    const allComments = [...comments.nodes, ...reviews.nodes].filter(({ createdAt }) =>
+        dayjs.utc(createdAt).isBefore(sevenDaysAgo)
+    );
+
+    if (!allComments.length) return false;
+
+    const authorReplies = allComments.some(({ id, author: { login } }) =>
+        allComments.some(
+            ({ in_reply_to_id, author }) => in_reply_to_id === id && author.login === pr.user.login
+        )
+    );
+
+    return !authorReplies;
+};
+
+const getStalledPRsByDate = async (date) => {
+    const targetDay = dayjs.utc(date);
+    const nextDay = targetDay.add(1, "day");
+
+    const prs = await fetchPaginatedData(octokit.rest.pulls.list, {
+        owner: OWNER,
+        repo: REPO,
+        state: "all",
+        per_page: 100,
+    });
+
+    const stalledPRs = await Promise.all(
+        prs.filter(({ created_at, closed_at }) => {
+            const createdAt = dayjs.utc(created_at);
+            const closedAt = closed_at ? dayjs.utc(closed_at) : null;
+            return createdAt.isBefore(nextDay) && (!closedAt || closedAt.isAfter(targetDay));
+        }).map(async (pr) => {
+            const wasStalled = await wasStalledPR(pr, date);
+            return wasStalled ? pr.number : null;
+        })
+    );
+
+    return stalledPRs.filter(Boolean).length;
+};
+
+const updateHist = async () => {
+    console.log("Updating history");
+    let histData = loadHist();
+
+    if (!histData.projects) histData.projects = {};
+    if (!histData.pull_requests) histData.pull_requests = {};
+    if (!histData.stalled_pull_requests) histData.stalled_pull_requests = {};
+
+    const commits = await getCommits();
+    commits.reverse();
+
+    for (const { sha, commit: { committer: { date: commitDate } } } of commits) {
+        const date = commitDate.split('T')[0];
+
+        if (!histData.projects[sha]) {
+            console.log(`Fetching subdir count for ${sha}`);
+            const subdirsCount = await getSubdirCount(sha);
+            histData.projects[sha] = { date, subdirsCount };
         }
     }
 
-    const openPullRequestsCount = await getOpenPullRequestsCount();
-    const today = new Date().toISOString().split('T')[0]; // Get the current date in YYYY-MM-DD format
-    historyData.pull_requests[today] = openPullRequestsCount;
+    const startDate = dayjs.utc("2024-06-01");
+    const endDate = dayjs.utc().endOf('day');
+    let date = startDate;
 
-    fs.writeFileSync(HISTORY_FILE, JSON.stringify(historyData, null, 4));
-    console.log("end updateHistory");
+    while (date.isBefore(endDate)) {
+        const dateString = date.format("YYYY-MM-DD");
+        const isToday = date.isSame(dayjs.utc(), 'day');
+        if (!histData.pull_requests[dateString] || isToday) {
+            console.log(`Fetching PRs for ${dateString}`);
+            const prCount = await getPRsByDate(dateString);
+            histData.pull_requests[dateString] = prCount;
+            console.log(histData.pull_requests[dateString]);
+        }
+        if (!histData.stalled_pull_requests[dateString] || isToday) {
+            console.log(`Fetching stalled PRs for ${dateString}`);
+            const stalledCount = await getStalledPRsByDate(dateString);
+            histData.stalled_pull_requests[dateString] = stalledCount;
+            console.log(histData.stalled_pull_requests[dateString]);
+        }
+        date = date.add(1, 'day');
+    }
+
+    saveHist(histData);
 };
 
-app.get('/data', (req, res) => {
-    console.log("begin app.get");
-    const historyData = fs.existsSync(HISTORY_FILE) ? JSON.parse(fs.readFileSync(HISTORY_FILE)) : { projects: {}, pull_requests: {} };
-    res.json(historyData);
-    console.log("end app.get");
+app.get("/data", (req, res) => {
+    const histData = loadHist();
+    res.json(histData);
 });
 
-cron.schedule('*/15 * * * *', async () => {
-    console.log('Updating history...');
-    await updateHistory();
-    console.log('History updated.');
+cron.schedule("*/15 * * * *", async () => {
+    await updateHist();
 });
 
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+app.get("/", (req, res) => {
+    res.sendFile(path.join(path.resolve(), "public", "index.html"));
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    updateHistory(); // Initial call to update history
-    console.log("end listen");
+app.listen(PORT, async () => {
+    const isValid = await verify();
+    if (isValid) {
+        await updateHist();
+    } else {
+        console.error("Invalid GitHub token. updateHist will not run.");
+        process.exit();
+    }
 });
