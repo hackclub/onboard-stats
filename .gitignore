@@ -1,4 +1,6 @@
 .env
 node_modules
 commit_history.json
+
+!public/graphs/.keep
 public/graphs/
