@@ -237,6 +237,11 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(path.resolve(), "public", "index.html"));
 });
 
+// health check
+app.get("/up", async (req, res) => {
+    res.send("OK");
+});
+
 app.listen(PORT, async () => {
     const isValid = await verify();
     if (isValid) {
