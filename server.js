@@ -239,6 +239,12 @@ app.get("/home", (req, res) => {
   res.sendFile(path.join(path.resolve(), "public", "index.html"));
 });
 
+// coolify deployment health check
+app.get("/up", (req, res) => {
+  res.send("OK");
+})
+
+// documentation
 app.get("/", (req, res) => {
   res.redirect("https://github.com/hackclub/onboard-stats");
 });
