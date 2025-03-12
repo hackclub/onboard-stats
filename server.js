@@ -249,6 +249,37 @@ cron.schedule("0 0,6,12,18 * * *", async () => {
   await updateHist();
 });
 
+// once per day, 1 hour after the last update check
+cron.schedule("0 13 * * *", async () => {
+  await postScreenshot();
+});
+
+async function postScreenshot() {
+  // once updateHist is done, run screenshot.js as a child process
+  console.log("Starting screenshot process...");
+  const screenshot = spawn("bun", ["run", "screenshot.js"]);
+
+  screenshot.stdout.on("data", (data) => {
+    console.log(`Screenshot stdout: ${data}`);
+  });
+
+  screenshot.stderr.on("data", (data) => {
+    console.error(`Screenshot stderr: ${data}`);
+  });
+
+  screenshot.on("error", (error) => {
+    console.error(`Screenshot process error: ${error}`);
+  });
+
+  screenshot.on("close", (code) => {
+    if (code === 0) {
+      console.log("Screenshot process completed successfully");
+    } else {
+      console.error(`Screenshot process failed with code ${code}`);
+    }
+  });
+}
+
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   const isValid = await verify();
@@ -258,9 +289,5 @@ app.listen(PORT, async () => {
   }
   // Optionally run update once on startup
   await updateHist();
-  // once updateHist is done, run screenshot.js as a child process
-  const screenshot = spawn("bun", ["screenshot.js"]);
-  screenshot.on("close", (code) => {
-    console.log(`screenshot.js exited with code ${code}`);
-  });
+  await postScreenshot();
 });
