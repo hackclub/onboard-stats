@@ -1,5 +1,5 @@
-# Use Node.js LTS version
-FROM node:20-slim
+# Use Bun base image
+FROM oven/bun:1-debian
 
 # Install Chrome dependencies and Puppeteer requirements
 RUN apt-get update && apt-get install -y \
@@ -22,14 +22,14 @@ WORKDIR /usr/src/app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies with Bun
+RUN bun install
 
 # Copy app source
 COPY . .
 
 # Expose the port your app runs on
-EXPOSE 3000
+EXPOSE 3030
 
-# Start the application
-CMD ["npm", "start"] 
+# Start the application with Bun
+CMD ["bun", "run", "server.js"] 
