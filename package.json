@@ -12,6 +12,7 @@
   "description": "",
   "dependencies": {
     "@slack/webhook": "^7.0.4",
+    "date-fns": "^4.1.0",
     "dayjs": "^1.11.12",
     "dayjs-plugin-utc": "^0.1.2",
     "express": "^4.19.2",
