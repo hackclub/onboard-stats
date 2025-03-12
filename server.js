@@ -235,8 +235,12 @@ app.get("/data", (req, res) => {
 });
 
 // Serve front-end
-app.get("/", (req, res) => {
+app.get("/home", (req, res) => {
   res.sendFile(path.join(path.resolve(), "public", "index.html"));
+});
+
+app.get("/", (req, res) => {
+  res.redirect("https://github.com/hackclub/onboard-stats");
 });
 
 // 2) Increase the cron job frequency to 4 times a day (00:00, 06:00, 12:00, 18:00):

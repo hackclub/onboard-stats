@@ -47,7 +47,7 @@ const takeScreenshot = async (url) => {
 };
 
 const sendHook = async () => {
-  const timestamp = await takeScreenshot(DOMAIN);
+  const timestamp = await takeScreenshot(DOMAIN + "/home");
   await webhook.send({
     text: "Here's the daily OnBoard Stats :onboard:",
     attachments: [
