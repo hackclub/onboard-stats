@@ -112,35 +112,38 @@ const updateCommits = async (histData) => {
   });
 
   let maxDate = dayjs.utc(since);
+  
+  // Group commits by date
+  const commitsByDate = {};
+  for (const commit of newCommits) {
+    const date = commit.commit.committer.date.split('T')[0];
+    // Only keep the last commit of each day
+    commitsByDate[date] = commit;
+  }
 
-  for (const c of newCommits) {
-    const {
-      sha,
-      commit: {
-        committer: { date: commitDate },
-      },
-    } = c;
-    const commitDay = dayjs.utc(commitDate);
-    const dateStr = commitDate.split("T")[0];
+  // Process one commit per day
+  for (const [dateStr, c] of Object.entries(commitsByDate)) {
+    const { sha } = c;
+    const commitDay = dayjs.utc(dateStr);
 
-    // If not already stored, fetch subdir count
+    // If we don't have data for this day yet
     if (!histData.projects[sha]) {
-      console.log(`  subdirs for commit ${sha} on ${dateStr}`);
+      console.log(`Getting project count for ${dateStr} (${sha})`);
       const subdirsCount = await getSubdirCount(sha);
       histData.projects[sha] = {
         date: dateStr,
         subdirsCount,
       };
-      // Save progress after each commit is processed
+      // Save progress after each day is processed
       saveHist(histData);
     }
+
     if (commitDay.isAfter(maxDate)) {
       maxDate = commitDay;
     }
   }
 
   histData.latestCommitDate = maxDate.toISOString();
-  // Save after updating the latest commit date
   saveHist(histData);
 };
 
