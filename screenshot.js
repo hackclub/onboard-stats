@@ -3,9 +3,6 @@ import puppeteer from "puppeteer";
 import path from "path";
 import { format } from "date-fns";
 import cron from "node-cron";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const { SLACK_WEBHOOK_URL, DOMAIN } = process.env;
 const webhook = new IncomingWebhook(SLACK_WEBHOOK_URL);

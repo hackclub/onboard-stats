@@ -1,4 +1,3 @@
-import "dotenv/config";
 import express from "express";
 import { Octokit } from "octokit";
 import fs from "fs";
@@ -6,6 +5,7 @@ import cron from "node-cron";
 import path from "path";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
+import { spawn } from "child_process";
 
 dayjs.extend(utc);
 
@@ -254,4 +254,9 @@ app.listen(PORT, async () => {
   }
   // Optionally run update once on startup
   await updateHist();
+  // once updateHist is done, run screenshot.js as a child process
+  const screenshot = spawn("bun", ["screenshot.js"]);
+  screenshot.on("close", (code) => {
+    console.log(`screenshot.js exited with code ${code}`);
+  });
 });
