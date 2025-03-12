@@ -75,7 +75,7 @@ const sendHook = async () => {
     text: "Here's the daily OnBoard Stats :onboard:",
     attachments: [
       {
-        title: `<${DOMAIN}|OnBoard Stats> sent at ${timestamp}`,
+        title: `<${DOMAIN}/home|OnBoard Stats> sent at ${timestamp}`,
         image_url: imageUrl,
       },
     ],

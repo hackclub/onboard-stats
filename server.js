@@ -27,6 +27,29 @@ if (!GITHUB_TOKEN) {
 }
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
+// Define routes before static middleware
+// documentation
+app.get("/", (req, res) => {
+  res.redirect("https://github.com/hackclub/onboard-stats");
+});
+
+// Serve front-end
+app.get("/home", (req, res) => {
+  res.sendFile(path.join(path.resolve(), "public", "index.html"));
+});
+
+// coolify deployment health check
+app.get("/up", (req, res) => {
+  res.send("OK");
+});
+
+// Endpoint for front-end
+app.get("/data", (req, res) => {
+  const histData = loadHist();
+  res.json(histData);
+});
+
+// Static files middleware - after routes
 app.use(express.static("public"));
 
 // Verify GitHub credentials
@@ -227,27 +250,6 @@ const updateHist = async () => {
   saveHist(histData);
   console.log("=== updateHist() complete ===");
 };
-
-// Endpoint for front-end
-app.get("/data", (req, res) => {
-  const histData = loadHist();
-  res.json(histData);
-});
-
-// Serve front-end
-app.get("/home", (req, res) => {
-  res.sendFile(path.join(path.resolve(), "public", "index.html"));
-});
-
-// coolify deployment health check
-app.get("/up", (req, res) => {
-  res.send("OK");
-})
-
-// documentation
-app.get("/", (req, res) => {
-  res.redirect("https://github.com/hackclub/onboard-stats");
-});
 
 // 2) Increase the cron job frequency to 4 times a day (00:00, 06:00, 12:00, 18:00):
 // The cron pattern "0 0,6,12,18 * * *" means "At minute 0 on hour 0,6,12,18."
