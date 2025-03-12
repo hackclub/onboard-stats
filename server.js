@@ -12,6 +12,11 @@ dayjs.extend(utc);
 const app = express();
 const PORT = process.env.PORT || 3030;
 
+const OWNER = "hackclub";
+const REPO = "onboard";
+const PROJECTS_DIR = "projects";
+const HISTORY_FILE = "./commit_history.json";
+
 /**
  * 1) Here is where we read the GitHub token from the environment variable GITHUB_TOKEN:
  */
@@ -21,8 +26,6 @@ if (!GITHUB_TOKEN) {
   process.exit(1);
 }
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
-
-const { OWNER, REPO, PROJECTS_DIR, HISTORY_FILE } = process.env;
 
 app.use(express.static("public"));
 
@@ -76,14 +79,20 @@ const saveHist = (histData) => {
 // Return the number of subdirectories in PROJECTS_DIR at a given commit sha
 const getSubdirCount = async (sha) => {
   try {
+    console.log(`Fetching contents of ${PROJECTS_DIR} at commit ${sha}`);
+    
     const { data } = await octokit.rest.repos.getContent({
       owner: OWNER,
       repo: REPO,
       path: PROJECTS_DIR,
       ref: sha,
     });
-    return data.filter((item) => item.type === "dir").length;
+    
+    const dirCount = data.filter((item) => item.type === "dir").length;
+    console.log(`Found ${dirCount} directories in ${PROJECTS_DIR}`);
+    return dirCount;
   } catch (err) {
+    console.error(`Error getting subdir count for ${sha}:`, err.message);
     return 0;
   }
 };
@@ -122,6 +131,8 @@ const updateCommits = async (histData) => {
         date: dateStr,
         subdirsCount,
       };
+      // Save progress after each commit is processed
+      saveHist(histData);
     }
     if (commitDay.isAfter(maxDate)) {
       maxDate = commitDay;
@@ -129,6 +140,8 @@ const updateCommits = async (histData) => {
   }
 
   histData.latestCommitDate = maxDate.toISOString();
+  // Save after updating the latest commit date
+  saveHist(histData);
 };
 
 /**
@@ -161,39 +174,44 @@ const updatePRs = async (histData) => {
     dailyCounts[dayKey][field]++;
   };
 
-  for (const pr of relevantPRs) {
-    const created = dayjs.utc(pr.created_at);
-    const closed = pr.closed_at ? dayjs.utc(pr.closed_at) : null;
+  // Process PRs in smaller batches to save progress
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < relevantPRs.length; i += BATCH_SIZE) {
+    const batch = relevantPRs.slice(i, i + BATCH_SIZE);
+    
+    for (const pr of batch) {
+      const created = dayjs.utc(pr.created_at);
+      const closed = pr.closed_at ? dayjs.utc(pr.closed_at) : null;
 
-    if (created.isAfter(maxPRDate)) {
-      maxPRDate = created;
+      if (created.isAfter(maxPRDate)) {
+        maxPRDate = created;
+      }
+
+      const dateStr = created.format("YYYY-MM-DD");
+      incrementDay(dateStr, "openCount");
+
+      const ageDays = dayjs.utc().diff(created, "days");
+      if (!closed && ageDays >= 14) {
+        incrementDay(dateStr, "stalledCount");
+      }
     }
 
-    const dateStr = created.format("YYYY-MM-DD");
+    // Update histData with the current batch
+    Object.entries(dailyCounts).forEach(([dayStr, { openCount, stalledCount }]) => {
+      if (!histData.pull_requests[dayStr]) {
+        histData.pull_requests[dayStr] = 0;
+      }
+      if (!histData.stalled_pull_requests[dayStr]) {
+        histData.stalled_pull_requests[dayStr] = 0;
+      }
+      histData.pull_requests[dayStr] = openCount;
+      histData.stalled_pull_requests[dayStr] = stalledCount;
+    });
 
-    // We'll just mark 1 open for that creation date
-    incrementDay(dateStr, "openCount");
-
-    // If it’s open more than 14 days => call it stalled
-    const ageDays = dayjs.utc().diff(created, "days");
-    if (!closed && ageDays >= 14) {
-      incrementDay(dateStr, "stalledCount");
-    }
+    // Save progress after each batch
+    histData.latestPRDate = maxPRDate.toISOString();
+    saveHist(histData);
   }
-
-  // Merge dailyCounts with histData
-  Object.entries(dailyCounts).forEach(([dayStr, { openCount, stalledCount }]) => {
-    if (!histData.pull_requests[dayStr]) {
-      histData.pull_requests[dayStr] = 0;
-    }
-    if (!histData.stalled_pull_requests[dayStr]) {
-      histData.stalled_pull_requests[dayStr] = 0;
-    }
-    histData.pull_requests[dayStr] += openCount;
-    histData.stalled_pull_requests[dayStr] += stalledCount;
-  });
-
-  histData.latestPRDate = maxPRDate.toISOString();
 };
 
 const updateHist = async () => {
