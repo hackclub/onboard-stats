@@ -7,7 +7,14 @@ const { SLACK_WEBHOOK_URL, DOMAIN } = process.env;
 const webhook = new IncomingWebhook(SLACK_WEBHOOK_URL);
 
 const takeScreenshot = async (url) => {
-  const browser = await puppeteer.launch();
+  const browser = await puppeteer.launch({
+    headless: "new",
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage'
+    ]
+  });
   const page = await browser.newPage();
   await page.goto(url, { waitUntil: "networkidle0" });
   

@@ -21,17 +21,31 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 # Create app directory
 WORKDIR /usr/src/app
 
+# Create a non-root user
+RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser \
+    && mkdir -p /home/pptruser/Downloads \
+    && mkdir -p /usr/src/app/public/graphs \
+    && chown -R pptruser:pptruser /home/pptruser \
+    && chown -R pptruser:pptruser /usr/src/app
+
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies with Bun
-RUN bun install
+# Install dependencies with Bun, ensuring Puppeteer doesn't download Chrome
+RUN PUPPETEER_SKIP_DOWNLOAD=true bun install && \
+    bun add puppeteer --no-install-deps
 
 # Copy app source
 COPY . .
+
+# Fix permissions
+RUN chown -R pptruser:pptruser /usr/src/app
+
+# Switch to non-root user
+USER pptruser
 
 # Expose the port your app runs on
 EXPOSE 3030
 
 # Start the application with Bun
-CMD ["bun", "run", "server.js"] 
+CMD ["bun", "run", "server.js"]
